@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Koło Fortuny - oglądanie z Iguaną</title>
+    <title>Koło Fortuny - Spotkanie Filmowe</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background: #1a1a1a; color: #fff; margin: 0; padding: 20px; }
         h1 { color: #4cd137; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
@@ -23,7 +23,7 @@
 </head>
 <body>
 
-    <h1>Jaki film u Iguany?</h1>
+    <h1>Spotkanie Filmowe</h1>
     <div id="result"></div>
     
     <div id="canvas-container">
@@ -31,12 +31,14 @@
         <canvas id="wheel" width="500" height="500"></canvas>
     </div>
     <br>
-    <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmu</button>
+    <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmów...</button>
 
     <script>
         const SHEET_ID = '1Jl8TK98sc7gTNH86Cibx30y22c0hYrps2Z2qroLhwmo'; 
-        // Zapytanie gviz pobierające strukturę danych bezpośrednio z widoku tabeli
-        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+        const targetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/htmlview`;
+        
+        // Używamy publicznego proxy allorigins, żeby ominąć rygorystyczne nagłówki CORS od Google Tables
+        const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
         const canvas = document.getElementById('wheel');
         const ctx = canvas.getContext('2d');
@@ -49,27 +51,35 @@
         async function loadSheetData() {
             try {
                 const response = await fetch(url);
-                if (!response.ok) throw new Error('Problem z połączeniem sieciowym');
+                if (!response.ok) throw new Error('Problem z bramką proxy');
                 
-                const rawText = await response.text();
+                const json = await response.json();
+                const htmlText = json.contents; // allorigins zwraca HTML wewnątrz obiektu JSON
                 
-                // Oczyszczanie tekstu z google'owego owijacza: /* O_o */ google.visualization.Query.setResponse({...});
-                const jsonString = rawText.substring(rawText.indexOf('{'), rawText.lastIndexOf('}') + 1);
-                const jsonData = JSON.parse(jsonString);
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(htmlText, 'text/html');
                 
-                // Wyciąganie wartości z pierwszej kolumny (indeks 0 w każdym wierszu)
-                const rows = jsonData.table.rows;
-                options = rows.map(row => {
-                    if (row.c && row.c[0] && row.c[0].v) {
-                        return row.c[0].v.toString().trim();
+                const cells = doc.querySelectorAll('td');
+                const tempOptions = [];
+                
+                cells.forEach(cell => {
+                    const text = cell.innerText ? cell.innerText.trim() : '';
+                    if (text && text.length > 0) {
+                        tempOptions.push(text);
                     }
-                    return '';
-                }).filter(item => item.length > 0);
+                });
 
-                // Sprawdzamy czy pierwszy wiersz to nagłówek "FILM" i go usuwamy
-                if (options.length > 0 && options[0].toUpperCase() === 'FILM') {
-                    options.shift();
-                }
+                options = tempOptions.filter((item, index) => {
+                    const val = item.toUpperCase();
+                    
+                    if (val === 'FILM' || val === 'SPOTKANIE FILMOWE' || val.includes('PARYSKA') || 
+                        val.includes('YYYY-MM-DD') || val === 'NOTATKI' || val === 'LOKALIZACJA' || 
+                        val === 'DATA I GODZINA ROZPOCZĘCIA') {
+                        return false;
+                    }
+                    
+                    return tempOptions.indexOf(item) === index;
+                });
 
                 if(options.length > 0) {
                     document.getElementById('spin-btn').innerText = 'Losuj film!';
@@ -79,7 +89,7 @@
                     document.getElementById('spin-btn').innerText = 'Brak filmów w tabeli';
                 }
             } catch (error) {
-                console.error("Błąd parsowania Google JSON:", error);
+                console.error("Błąd ładowania przez proxy:", error);
                 document.getElementById('spin-btn').innerText = 'Błąd ładowania danych';
             }
         }
@@ -136,3 +146,20 @@
                     isSpinning = false;
                     document.getElementById('spin-btn').disabled = false;
                     calculateWinner();
+                }
+            }
+            requestAnimationFrame(animate);
+        }
+
+        function calculateWinner() {
+            const numOptions = options.length;
+            let degrees = (currentRotation * 180 / Math.PI) % 360;
+            let index = Math.floor(((360 - degrees + 270) % 360) / (360 / numOptions));
+            
+            document.getElementById('result').innerText = `Wybrany film: ${options[index]}`;
+        }
+
+        loadSheetData();
+    </script>
+</body>
+</html>
