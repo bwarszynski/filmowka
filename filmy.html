@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Koło Fortuny - oglądanie z Iguaną</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background: #1a1a1a; color: #fff; margin: 0; padding: 20px; }
+        h1 { color: #4cd137; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+        #canvas-container { position: relative; display: inline-block; margin-top: 20px; }
+        canvas { border: 6px solid #fff; border-radius: 50%; background: #262626; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
+        #pointer {
+            position: absolute; top: -15px; left: 50%; transform: translateX(-50%);
+            width: 0; height: 0; 
+            border-left: 20px solid transparent; border-right: 20px solid transparent;
+            border-top: 35px solid #ff4757; z-index: 10;
+        }
+        button { padding: 14px 28px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 25px; background: #4cd137; border: none; color: white; border-radius: 25px; box-shadow: 0 4px 10px rgba(76,209,55,0.4); transition: all 0.2s; }
+        button:hover { background: #44bd32; transform: translateY(-2px); }
+        button:disabled { background: #555; box-shadow: none; cursor: not-allowed; transform: none; }
+        #result { font-size: 26px; margin-top: 25px; font-weight: bold; color: #4cd137; min-height: 35px; }
+    </style>
+</head>
+<body>
+
+    <h1>Jaki film u Iguany?</h1>
+    <div id="result"></div>
+    
+    <div id="canvas-container">
+        <div id="pointer"></div>
+        <canvas id="wheel" width="500" height="500"></canvas>
+    </div>
+    <br>
+    <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmu</button>
+
+    <script>
+        const SHEET_ID = '1Jl8TK98sc7gTNH86Cibx30y22c0hYrps2Z2qroLhwmo'; 
+        // Zapytanie gviz pobierające strukturę danych bezpośrednio z widoku tabeli
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json`;
+
+        const canvas = document.getElementById('wheel');
+        const ctx = canvas.getContext('2d');
+        let options = [];
+        let currentRotation = 0;
+        let isSpinning = false;
+
+        const colors = ['#1e90ff', '#ffa500', '#2ed573', '#1abc9c', '#9b59b6', '#ff4757'];
+
+        async function loadSheetData() {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Problem z połączeniem sieciowym');
+                
+                const rawText = await response.text();
+                
+                // Oczyszczanie tekstu z google'owego owijacza: /* O_o */ google.visualization.Query.setResponse({...});
+                const jsonString = rawText.substring(rawText.indexOf('{'), rawText.lastIndexOf('}') + 1);
+                const jsonData = JSON.parse(jsonString);
+                
+                // Wyciąganie wartości z pierwszej kolumny (indeks 0 w każdym wierszu)
+                const rows = jsonData.table.rows;
+                options = rows.map(row => {
+                    if (row.c && row.c[0] && row.c[0].v) {
+                        return row.c[0].v.toString().trim();
+                    }
+                    return '';
+                }).filter(item => item.length > 0);
+
+                // Sprawdzamy czy pierwszy wiersz to nagłówek "FILM" i go usuwamy
+                if (options.length > 0 && options[0].toUpperCase() === 'FILM') {
+                    options.shift();
+                }
+
+                if(options.length > 0) {
+                    document.getElementById('spin-btn').innerText = 'Losuj film!';
+                    document.getElementById('spin-btn').disabled = false;
+                    drawWheel();
+                } else {
+                    document.getElementById('spin-btn').innerText = 'Brak filmów w tabeli';
+                }
+            } catch (error) {
+                console.error("Błąd parsowania Google JSON:", error);
+                document.getElementById('spin-btn').innerText = 'Błąd ładowania danych';
+            }
+        }
+
+        function drawWheel() {
+            const numOptions = options.length;
+            const arcSize = (2 * Math.PI) / numOptions;
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            options.forEach((option, i) => {
+                const angle = i * arcSize + currentRotation;
+                
+                ctx.beginPath();
+                ctx.fillStyle = colors[i % colors.length];
+                ctx.moveTo(250, 250);
+                ctx.arc(250, 250, 250, angle, angle + arcSize);
+                ctx.lineTo(250, 250);
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.save();
+                ctx.translate(250, 250);
+                ctx.rotate(angle + arcSize / 2);
+                ctx.textAlign = "right";
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 13px Arial";
+                ctx.fillText(option.substring(0, 26), 230, 5);
+                ctx.restore();
+            });
+        }
+
+        function spinWheel() {
+            if (isSpinning) return;
+            isSpinning = true;
+            document.getElementById('spin-btn').disabled = true;
+            document.getElementById('result').innerText = '';
+
+            const spinAngle = Math.random() * 1000 + 3000;
+            const duration = 5000;
+            const start = performance.now();
+
+            function animate(now) {
+                const elapsed = now - start;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeOut = 1 - Math.pow(1 - progress, 4);
+                
+                currentRotation = (easeOut * spinAngle) * (Math.PI / 180);
+                drawWheel();
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    isSpinning = false;
+                    document.getElementById('spin-btn').disabled = false;
+                    calculateWinner();
