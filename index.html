@@ -35,10 +35,7 @@
 
     <script>
         const SHEET_ID = '1Jl8TK98sc7gTNH86Cibx30y22c0hYrps2Z2qroLhwmo'; 
-        const targetUrl = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/htmlview`;
-        
-        // Używamy publicznego proxy allorigins, żeby ominąć rygorystyczne nagłówki CORS od Google Tables
-        const url = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv`;
 
         const canvas = document.getElementById('wheel');
         const ctx = canvas.getContext('2d');
@@ -48,48 +45,59 @@
 
         const colors = ['#1e90ff', '#ffa500', '#2ed573', '#1abc9c', '#9b59b6', '#ff4757'];
 
+        // Bezpieczny parser standardu CSV (obsługuje wielolinijkowe teksty i cudzysłowy)
+        function parseCSV(text) {
+            let p = '', c = r = [];
+            let q = false;
+            let rows = [[]];
+            
+            for (let i = 0; i < text.length; i++) {
+                let char = text[i];
+                let next = text[i+1];
+                
+                if (char === '"') {
+                    if (q && next === '"') { p += '"'; i++; }
+                    else { q = !q; }
+                } else if (char === ',' && !q) {
+                    rows[rows.length - 1].push(p);
+                    p = '';
+                } else if ((char === '\r' || char === '\n') && !q) {
+                    if (char === '\r' && next === '\n') { i++; }
+                    rows[rows.length - 1].push(p);
+                    p = '';
+                    rows.push([]);
+                } else {
+                    p += char;
+                }
+            }
+            if (p || text[text.length - 1] === ',') {
+                rows[rows.length - 1].push(p);
+            }
+            return rows.filter(row => row.length > 0 && row[0].trim() !== '');
+        }
+
         async function loadSheetData() {
             try {
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Problem z bramką proxy');
+                // Zapytanie z cache-busterem, żeby zawsze brało świeżą listę po edycji
+                const response = await fetch(`${url}&t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error('Błąd pobierania pliku');
                 
-                const json = await response.json();
-                const htmlText = json.contents; // allorigins zwraca HTML wewnątrz obiektu JSON
+                const rawText = await response.text();
+                const parsedRows = parseCSV(rawText);
                 
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(htmlText, 'text/html');
-                
-                const cells = doc.querySelectorAll('td');
-                const tempOptions = [];
-                
-                cells.forEach(cell => {
-                    const text = cell.innerText ? cell.innerText.trim() : '';
-                    if (text && text.length > 0) {
-                        tempOptions.push(text);
-                    }
-                });
-
-                options = tempOptions.filter((item, index) => {
-                    const val = item.toUpperCase();
-                    
-                    if (val === 'FILM' || val === 'SPOTKANIE FILMOWE' || val.includes('PARYSKA') || 
-                        val.includes('YYYY-MM-DD') || val === 'NOTATKI' || val === 'LOKALIZACJA' || 
-                        val === 'DATA I GODZINA ROZPOCZĘCIA') {
-                        return false;
-                    }
-                    
-                    return tempOptions.indexOf(item) === index;
-                });
+                // Wyciągamy tylko pierwszą kolumnę (Tytuł filmu)
+                options = parsedRows.map(row => row[0].trim())
+                                    .filter(item => item.length > 0 && item.toUpperCase() !== 'FILM');
 
                 if(options.length > 0) {
                     document.getElementById('spin-btn').innerText = 'Losuj film!';
                     document.getElementById('spin-btn').disabled = false;
                     drawWheel();
                 } else {
-                    document.getElementById('spin-btn').innerText = 'Brak filmów w tabeli';
+                    document.getElementById('spin-btn').innerText = 'Brak pozycji w kolumnie';
                 }
             } catch (error) {
-                console.error("Błąd ładowania przez proxy:", error);
+                console.error("Błąd parsowania CSV:", error);
                 document.getElementById('spin-btn').innerText = 'Błąd ładowania danych';
             }
         }
@@ -116,8 +124,8 @@
                 ctx.rotate(angle + arcSize / 2);
                 ctx.textAlign = "right";
                 ctx.fillStyle = "#fff";
-                ctx.font = "bold 13px Arial";
-                ctx.fillText(option.substring(0, 26), 230, 5);
+                ctx.font = "bold 11px Arial"; // Lekko zmniejszony font ze względu na długie tytuły (np. WANDERERS OF DESERT)
+                ctx.fillText(option.substring(0, 28), 230, 5);
                 ctx.restore();
             });
         }
