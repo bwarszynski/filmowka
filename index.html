@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Koło Fortuny - Spotkanie Filmowe</title>
+    <title>Filmy z Iguaną</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; text-align: center; background: #1a1a1a; color: #fff; margin: 0; padding: 20px; }
         h1 { color: #4cd137; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
@@ -24,7 +24,7 @@
 </head>
 <body>
 
-    <h1>Spotkanie Filmowe</h1>
+    <h1>Jaki film Iga?</h1>
     <div id="result"></div>
     
     <div id="canvas-container">
@@ -32,15 +32,15 @@
         <canvas id="wheel" width="500" height="500"></canvas>
     </div>
     <br>
-    <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmów...</button>
+    <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmów</button>
 
     <div id="error-box">
-        <h3>⚠️ Problem z pobraniem danych</h3>
+        <h3>Nie można pobrać danych</h3>
         <div id="error-details"></div>
     </div>
 
     <script>
-        // ID Twojego oryginalnego arkusza z filmami
+        // ID arkusza z filmami
         const SHEET_ID = '1Jl8TK98sc7gTNH86Cibx30y22c0hYrps2Z2qroLhwmo'; 
         const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv`;
 
@@ -51,7 +51,7 @@
         let isSpinning = false;
         const colors = ['#1e90ff', '#ffa500', '#2ed573', '#1abc9c', '#9b59b6', '#ff4757'];
 
-        // Standardowy parser RFC 4180 radzący sobie z zagnieżdżonymi cudzysłowami i przecinkami
+        // Parsowanie cudzysłowiów i innych chujów mujów
         function parseCSV(text) {
             let p = '', q = false;
             let rows = [[]];
@@ -72,34 +72,34 @@
 
         async function loadSheetData() {
             try {
-                // Cache-buster, żeby pobierać świeże dane po każdej aktualizacji listy w arkuszu
+                // Aktualizacja listy
                 const response = await fetch(`${url}&t=${new Date().getTime()}`);
                 if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                 
                 const rawText = await response.text();
                 
                 if (rawText.trim().startsWith('<!DOCTYPE html>')) {
-                    throw new Error("Google zwróciło stronę HTML zamiast CSV. Upewnij się, że w Arkuszu kliknięto 'Plik -> Udostępnij -> Opublikuj w sieci'.");
+                    throw new Error("Google zwróciło HTML zamiast CSV. W arkuszu kliknij 'Plik -> Udostępnij -> Opublikuj w sieci'");
                 }
 
                 const parsedRows = parseCSV(rawText);
                 
-                // Pobieramy pierwszą kolumnę i odrzucamy nagłówek "FILM" / "FILMDATA"
+                // Parsowanie nagłówków
                 options = parsedRows.map(row => row[0].trim())
                                     .filter(item => item.length > 0 && item.toUpperCase() !== 'FILM' && item.toUpperCase() !== 'FILMDATA');
 
                 if(options.length > 0) {
-                    document.getElementById('spin-btn').innerText = 'Losuj film!';
+                    document.getElementById('spin-btn').innerText = 'Losuj!';
                     document.getElementById('spin-btn').disabled = false;
                     drawWheel();
                 } else {
-                    throw new Error("Pobrana kolumna z filmami jest pusta.");
+                    throw new Error("kolumna pusta");
                 }
             } catch (error) {
                 console.error(error);
-                document.getElementById('spin-btn').innerText = 'Błąd ładowania';
+                document.getElementById('spin-btn').innerText = 'Błąd';
                 document.getElementById('error-box').style.display = 'block';
-                document.getElementById('error-details').innerText = error.message + '\n\nPrzypomnienie: Skrypt musi działać w środowisku HTTPS (np. na GitHub Pages), uruchomiony bezpośrednio z dysku rzuci błędem CORS.';
+                document.getElementById('error-details').innerText = error.message + '\n\nPrzypomnienie: Skrypt musi działać w środowisku HTTPS bo bezpośrednio z dysku rzuci błędem CORS.';
             }
         }
 
@@ -121,7 +121,7 @@
                 ctx.rotate(angle + arcSize / 2);
                 ctx.textAlign = "right";
                 ctx.fillStyle = "#fff";
-                ctx.font = "bold 9px Arial"; // Rozmiar dopasowany pod dużą liczbę filmów z arkusza
+                ctx.font = "bold 9px Arial"; // Rozmiar dopasowany pod dużą liczbę filmów, mozna zmniejszyc
                 ctx.fillText(option.substring(0, 24), 230, 4);
                 ctx.restore();
             });
@@ -155,7 +155,7 @@
             const numOptions = options.length;
             let degrees = (currentRotation * 180 / Math.PI) % 360;
             let index = Math.floor(((360 - degrees + 270) % 360) / (360 / numOptions));
-            document.getElementById('result').innerText = `Wybrany film: ${options[index]}`;
+            document.getElementById('result').innerText = `Oglądamy: ${options[index]}`;
         }
 
         loadSheetData();
