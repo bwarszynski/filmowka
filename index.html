@@ -19,7 +19,7 @@
         button:hover { background: #44bd32; transform: translateY(-2px); }
         button:disabled { background: #555; box-shadow: none; cursor: not-allowed; transform: none; }
         #result { font-size: 26px; margin-top: 25px; font-weight: bold; color: #4cd137; min-height: 35px; }
-        #secret-iframe { display: none; }
+        #error-box { display: none; max-width: 600px; margin: 30px auto; padding: 20px; background: #ff4757; color: #fff; border-radius: 8px; text-align: left; font-family: monospace; }
     </style>
 </head>
 <body>
@@ -34,9 +34,16 @@
     <br>
     <button id="spin-btn" onclick="spinWheel()" disabled>Ładowanie filmów...</button>
 
-    <iframe id="secret-iframe" src="https://docs.google.com/spreadsheets/d/e/2PACX-1vTQ6ok4kX69P2VGaXWEB7-6ghysNsuW9rRtsH82gRy_Zlsjid3whCh_jlw5HSiyvxKgOBR4xU7hDka9/pubhtml?gid=0&single=true" onload="processIframeData()"></iframe>
+    <div id="error-box">
+        <h3>⚠️ Problem z pobraniem danych</h3>
+        <div id="error-details"></div>
+    </div>
 
     <script>
+        // ID Twojego oryginalnego arkusza z filmami
+        const SHEET_ID = '1Jl8TK98sc7gTNH86Cibx30y22c0hYrps2Z2qroLhwmo'; 
+        const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/pub?output=csv`;
+
         const canvas = document.getElementById('wheel');
         const ctx = canvas.getContext('2d');
         let options = [];
@@ -44,80 +51,55 @@
         let isSpinning = false;
         const colors = ['#1e90ff', '#ffa500', '#2ed573', '#1abc9c', '#9b59b6', '#ff4757'];
 
-        function processIframeData() {
+        // Standardowy parser RFC 4180 radzący sobie z zagnieżdżonymi cudzysłowami i przecinkami
+        function parseCSV(text) {
+            let p = '', q = false;
+            let rows = [[]];
+            for (let i = 0; i < text.length; i++) {
+                let char = text[i]; let next = text[i+1];
+                if (char === '"') {
+                    if (q && next === '"') { p += '"'; i++; } else { q = !q; }
+                } else if (char === ',' && !q) {
+                    rows[rows.length - 1].push(p); p = '';
+                } else if ((char === '\r' || char === '\n') && !q) {
+                    if (char === '\r' && next === '\n') { i++; }
+                    rows[rows.length - 1].push(p); p = ''; rows.push([]);
+                } else { p += char; }
+            }
+            if (p || text[text.length - 1] === ',') { rows[rows.length - 1].push(p); }
+            return rows.filter(row => row.length > 0 && row[0].trim() !== '');
+        }
+
+        async function loadSheetData() {
             try {
-                const iframe = document.getElementById('secret-iframe');
-                // Pobieramy zawartość wyrenderowanej przez Google tabeli
-                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                // Cache-buster, żeby pobierać świeże dane po każdej aktualizacji listy w arkuszu
+                const response = await fetch(`${url}&t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                 
-                // Szukamy wszystkich komórek w pierwszej kolumnie tabeli Google
-                const rows = iframeDoc.querySelectorAll('table tbody tr');
-                const tempOptions = [];
+                const rawText = await response.text();
+                
+                if (rawText.trim().startsWith('<!DOCTYPE html>')) {
+                    throw new Error("Google zwróciło stronę HTML zamiast CSV. Upewnij się, że w Arkuszu kliknięto 'Plik -> Udostępnij -> Opublikuj w sieci'.");
+                }
 
-                rows.forEach(row => {
-                    // Pierwsza komórka z danymi (zazwyczaj druga w strukturze po indeksie wiersza th/td)
-                    const cells = row.querySelectorAll('td');
-                    if (cells.length > 0) {
-                        const firstCellText = cells[0].innerText || cells[0].textContent;
-                        if (firstCellText) {
-                            tempOptions.push(firstCellText.trim());
-                        }
-                    }
-                });
+                const parsedRows = parseCSV(rawText);
+                
+                // Pobieramy pierwszą kolumnę i odrzucamy nagłówek "FILM" / "FILMDATA"
+                options = parsedRows.map(row => row[0].trim())
+                                    .filter(item => item.length > 0 && item.toUpperCase() !== 'FILM' && item.toUpperCase() !== 'FILMDATA');
 
-                // Czyszczenie nagłówków i spięcie z kołem
-                options = tempOptions.filter(item => {
-                    const val = item.toUpperCase();
-                    return item.length > 0 && val !== 'FILM' && val !== 'FILMDATA';
-                });
-
-                if (options.length > 0) {
+                if(options.length > 0) {
                     document.getElementById('spin-btn').innerText = 'Losuj film!';
                     document.getElementById('spin-btn').disabled = false;
                     drawWheel();
                 } else {
-                    // fallback jeśli iframe ma puste selektory, wyciągamy po prostu unikalne teksty td
-                    const allCells = iframeDoc.querySelectorAll('td');
-                    const textList = Array.from(allCells).map(c => (c.innerText || '').trim());
-                    options = textList.filter((item, index) => {
-                        const val = item.toUpperCase();
-                        return item.length > 2 && val !== 'FILM' && !val.includes('PARYSKA') && !val.includes('YYYY-MM-DD') && textList.indexOf(item) === index;
-                    });
-                    
-                    if (options.length > 0) {
-                        document.getElementById('spin-btn').innerText = 'Losuj film!';
-                        document.getElementById('spin-btn').disabled = false;
-                        drawWheel();
-                    } else {
-                        document.getElementById('spin-btn').innerText = 'Brak danych do wczytania';
-                    }
+                    throw new Error("Pobrana kolumna z filmami jest pusta.");
                 }
-            } catch (e) {
-                // Jeśli bezpieczeństwo przeglądarki zablokuje głęboki dostęp do iframe, używamy ostatecznego parsowania tekstu z pobrania bezpośredniego
-                console.log("Iframe fallback");
-                fallbackFetch();
-            }
-        }
-
-        async function fallbackFetch() {
-            // Ostateczny, uproszczony i alternatywny link bez parametrów API, czysty plik wyjściowy
-            const fallbackUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQ6ok4kX69P2VGaXWEB7-6ghysNsuW9rRtsH82gRy_Zlsjid3whCh_jlw5HSiyvxKgOBR4xU7hDka9/pub?output=csv';
-            try {
-                const res = await fetch(fallbackUrl);
-                const text = await res.text();
-                const lines = text.split(/\r?\n/);
-                options = lines.map(l => {
-                    const c = l.split(',');
-                    return c[0].replace(/"/g, '').trim();
-                }).filter(item => item.length > 0 && item.toUpperCase() !== 'FILM');
-
-                if (options.length > 0) {
-                    document.getElementById('spin-btn').innerText = 'Losuj film!';
-                    document.getElementById('spin-btn').disabled = false;
-                    drawWheel();
-                }
-            } catch(err) {
-                document.getElementById('spin-btn').innerText = 'Wymagany odśwież (Ctrl+F5)';
+            } catch (error) {
+                console.error(error);
+                document.getElementById('spin-btn').innerText = 'Błąd ładowania';
+                document.getElementById('error-box').style.display = 'block';
+                document.getElementById('error-details').innerText = error.message + '\n\nPrzypomnienie: Skrypt musi działać w środowisku HTTPS (np. na GitHub Pages), uruchomiony bezpośrednio z dysku rzuci błędem CORS.';
             }
         }
 
@@ -139,8 +121,8 @@
                 ctx.rotate(angle + arcSize / 2);
                 ctx.textAlign = "right";
                 ctx.fillStyle = "#fff";
-                ctx.font = "bold 10px Arial";
-                ctx.fillText(option.substring(0, 26), 230, 5);
+                ctx.font = "bold 9px Arial"; // Rozmiar dopasowany pod dużą liczbę filmów z arkusza
+                ctx.fillText(option.substring(0, 24), 230, 4);
                 ctx.restore();
             });
         }
@@ -175,6 +157,8 @@
             let index = Math.floor(((360 - degrees + 270) % 360) / (360 / numOptions));
             document.getElementById('result').innerText = `Wybrany film: ${options[index]}`;
         }
+
+        loadSheetData();
     </script>
 </body>
 </html>
